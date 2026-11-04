@@ -1,0 +1,48 @@
+{
+  "name": "sell-guy",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.5",
+  "scripts": {
+    "dev": "nx run-many -t serve --projects=web,api --parallel",
+    "build": "nx run-many -t build --projects=web,api",
+    "test": "nx run-many -t test --projects=web,api --parallel",
+    "lint": "nx run-many -t lint --projects=web,api --parallel",
+    "db:migrate": "cargo run --locked --manifest-path apps/api/Cargo.toml -- migrate"
+  },
+  "devDependencies": {
+    "@nx/js": "20.8.2",
+    "@nx/react": "20.8.2",
+    "@nx/vite": "20.8.2",
+    "@vitejs/plugin-react": "4.3.4",
+    "autoprefixer": "10.4.20",
+    "eslint": "9.19.0",
+    "nx": "20.8.2",
+    "postcss": "8.5.3",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.7.3",
+    "vite": "6.1.0",
+    "vitest": "3.0.5",
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.2.0",
+    "@testing-library/user-event": "14.6.1",
+    "jsdom": "26.0.0",
+    "@types/react": "19.0.8",
+    "@types/react-dom": "19.0.3",
+    "@types/node": "22.13.4",
+    "fake-indexeddb": "6.0.0"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "1.1.6",
+    "@radix-ui/react-label": "2.1.2",
+    "@radix-ui/react-slot": "1.1.2",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "idb": "8.0.2",
+    "lucide-react": "0.475.0",
+    "oidc-client-ts": "3.1.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "tailwind-merge": "3.0.1"
+  }
+}

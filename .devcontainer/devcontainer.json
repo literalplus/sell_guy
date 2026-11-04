@@ -1,0 +1,27 @@
+{
+  "name": "Sell Guy",
+  "dockerComposeFile": "compose.yaml",
+  "service": "workspace",
+  "runServices": ["postgres", "workspace"],
+  "workspaceFolder": "/workspaces/sell-guy",
+  "shutdownAction": "stopCompose",
+  "remoteUser": "vscode",
+  "forwardPorts": [4200, 8080],
+  "portsAttributes": {
+    "4200": { "label": "Sell Guy web" },
+    "8080": { "label": "Sell Guy API" }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "stable",
+      "profile": "minimal",
+      "components": "rustfmt,clippy"
+    }
+  },
+  "postCreateCommand": "corepack pnpm@9.15.5 install --frozen-lockfile && corepack pnpm@9.15.5 db:migrate",
+  "customizations": {
+    "vscode": {
+      "extensions": ["rust-lang.rust-analyzer", "dbaeumer.vscode-eslint"]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+.git
+.nx
+.env
+.env.*
+node_modules
+**/node_modules
+**/target
+**/dist
+coverage

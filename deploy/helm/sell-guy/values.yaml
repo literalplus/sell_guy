@@ -1,0 +1,48 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/your-organization/sell-guy
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  hosts:
+    - host: sell-guy.example.invalid
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Create this Secret out-of-band (for example via External Secrets) and store
+# DATABASE_URL as a connection string for the app's dedicated database/user.
+database:
+  existingSecret: sell-guy-database
+  secretKey: DATABASE_URL
+
+# Public Authentik/OIDC configuration is supplied at deploy time.
+oidc:
+  issuer: ""
+  clientId: ""
+  audience: ""
+  scope: "openid profile email"
+  redirectUri: ""
+  postLogoutRedirectUri: ""
+
+app:
+  baseUrl: ""
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
