@@ -19,7 +19,7 @@
       "components": "rustfmt,clippy"
     }
   },
-  "postCreateCommand": "corepack pnpm@12.16.1 install --frozen-lockfile && corepack pnpm@12.16.1 db:migrate",
+  "postCreateCommand": "pnpm install --frozen-lockfile && pnpm db:migrate",
   "customizations": {
     "vscode": {
       "extensions": ["rust-lang.rust-analyzer", "dbaeumer.vscode-eslint"]

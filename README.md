@@ -23,6 +23,8 @@ React frontend and Rust API; the API serves the compiled frontend in production.
    `http://localhost:8080`; the PostgreSQL container is also published at
    `localhost:5433` for host-side tools.
 
+3. Start the backend in the devcontainer: `npm run dev` - Important: Use the frontend (4200) instead of backend for local development, e.g. the login and live reloading won't work on 8080
+
 The devcontainer uses the Podman-compatible Compose setup in
 `.devcontainer/compose.yaml`; workspace settings select `podman` and
 `podman-compose` for the Dev Containers extension. On a systemd user session,

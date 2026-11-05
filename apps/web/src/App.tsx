@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'oidc-client-ts';
 import { ArrowDownToLine, ArrowLeftRight, CircleDollarSign, Cloud, CloudOff, Minus, Plus, Settings, ShoppingBasket, Trash2 } from 'lucide-react';
 import { api, ApiError } from './api';
-import { callbackOrStoredUser, createUserManager, tokenForUpload } from './auth';
+import { callbackOrStoredUser, createUserManager, isAuthenticated, tokenForUpload } from './auth';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Dialog } from './components/ui/dialog';
@@ -21,6 +21,10 @@ export default function App() {
   const [runtime, setRuntime] = useState<RuntimeConfig | null>(null);
   const [manager, setManager] = useState<ReturnType<typeof createUserManager> | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const authRedirecting = useRef(false);
+  const signingOut = useRef(false);
+  const authInitialization = useRef<{ runtime: RuntimeConfig; manager: ReturnType<typeof createUserManager>; session: Promise<User | null> } | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [managedProducts, setManagedProducts] = useState<Product[]>([]);
   const [view, setView] = useState<View>('checkout');
@@ -50,14 +54,55 @@ export default function App() {
 
   useEffect(() => {
     if (!runtime) return;
-    const auth = createUserManager(runtime);
+    let initialization = authInitialization.current;
+    if (!initialization || initialization.runtime !== runtime) {
+      const auth = createUserManager(runtime);
+      initialization = { runtime, manager: auth, session: callbackOrStoredUser(auth) };
+      authInitialization.current = initialization;
+    }
+    const auth = initialization.manager;
     setManager(auth);
-    callbackOrStoredUser(auth).then(setUser).catch(error => setLoadingError(`Sign-in could not be completed: ${String(error)}`));
-    const onUserLoaded = (loaded: User) => setUser(loaded);
-    const onUserUnloaded = () => setUser(null);
+    let active = true;
+    const redirectToIdp = () => {
+      if (!active || authRedirecting.current || signingOut.current) return;
+      authRedirecting.current = true;
+      void auth.signinRedirect().catch(error => {
+        authRedirecting.current = false;
+        if (active) setLoadingError(`Sign-in could not be started: ${String(error)}`);
+      });
+    };
+    const onUserLoaded = (loaded: User) => {
+      if (!active) return;
+      if (!isAuthenticated(loaded)) {
+        setUser(null);
+        setAuthReady(false);
+        redirectToIdp();
+        return;
+      }
+      authRedirecting.current = false;
+      setUser(loaded);
+      setAuthReady(true);
+    };
+    const onUserUnloaded = () => {
+      if (!active) return;
+      setUser(null);
+      setAuthReady(false);
+      redirectToIdp();
+    };
     auth.events.addUserLoaded(onUserLoaded);
     auth.events.addUserUnloaded(onUserUnloaded);
-    return () => { auth.events.removeUserLoaded(onUserLoaded); auth.events.removeUserUnloaded(onUserUnloaded); };
+    initialization.session.then(current => {
+      if (!active) return;
+      if (isAuthenticated(current)) onUserLoaded(current);
+      else redirectToIdp();
+    }).catch(error => {
+      if (active) setLoadingError(`Sign-in could not be completed: ${String(error)}`);
+    });
+    return () => {
+      active = false;
+      auth.events.removeUserLoaded(onUserLoaded);
+      auth.events.removeUserUnloaded(onUserUnloaded);
+    };
   }, [runtime]);
 
   useEffect(() => {
@@ -241,8 +286,8 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [products, addProduct, dialogMode, view]);
 
-  if (loadingError && !state) return <main className="mx-auto max-w-xl p-8"><Card><CardHeader><CardTitle>Sell Guy could not start</CardTitle></CardHeader><CardContent><p role="alert" className="text-destructive">{loadingError}</p><Button className="mt-5" onClick={() => location.reload()}>Try again</Button></CardContent></Card></main>;
-  if (!state || !runtime || !manager) return <main className="grid min-h-screen place-items-center p-5"><div className="text-center"><div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-primary border-r-transparent"/><p className="text-muted-foreground">Starting Sell Guy…</p></div></main>;
+  if (loadingError && (!state || !runtime || !manager || !authReady)) return <main className="mx-auto max-w-xl p-8"><Card><CardHeader><CardTitle>Sell Guy could not start</CardTitle></CardHeader><CardContent><p role="alert" className="text-destructive">{loadingError}</p><Button className="mt-5" onClick={() => location.reload()}>Try again</Button></CardContent></Card></main>;
+  if (!state || !runtime || !manager || !authReady || !user) return <main className="grid min-h-screen place-items-center p-5"><div className="text-center"><div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-primary border-r-transparent"/><p className="text-muted-foreground">Starting Sell Guy…</p></div></main>;
 
   const dialogTitle = dialogMode === 'custom' ? 'Sonstiger Artikel' : dialogMode === 'donation' ? 'Spende' : dialogMode === 'manual-set' ? 'Kassenstand festlegen' : 'Betrag aus Kasse entnehmen';
   const receivedCents = received === '' ? null : parseCurrencyToCents(received, true);
@@ -261,7 +306,7 @@ export default function App() {
           <span className="hidden sm:inline">{identityEmail ?? 'Operator'}</span>
           <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${online ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}><span className={`h-1.5 w-1.5 rounded-full ${online ? 'bg-emerald-600' : 'bg-amber-600'}`}/>{online ? 'Online' : 'Offline'}</span>
           {pendingCount > 0 && <span className="inline-flex items-center gap-1 text-xs"><Cloud size={15}/> {pendingCount} pending</span>}
-          <Button size="sm" variant="outline" onClick={() => user ? void manager.signoutRedirect() : void manager.signinRedirect()}>{user ? 'Sign out' : 'Sign in'}</Button>
+          <Button size="sm" variant="outline" onClick={() => { signingOut.current = true; void manager.signoutRedirect().catch(error => { signingOut.current = false; setStatus(`Sign-out could not be started: ${String(error)}`); }); }}>Sign out</Button>
         </div>
       </div>
     </header>
@@ -270,8 +315,7 @@ export default function App() {
       {view === 'checkout' && <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(380px,0.85fr)]">
         <section className="space-y-5">
           <div className="flex items-end justify-between gap-3"><div><p className="text-sm font-medium text-primary">CHECKOUT</p><h1 className="mt-1 text-2xl font-bold">Select items</h1></div><div className="text-right text-sm text-muted-foreground">Sale ID<br/><span className="font-mono text-xs">{state.active_cart.cart_uuid.slice(0, 8)}</span></div></div>
-          {!user && <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">Sign in when online to load the catalog and upload queued invoices. The current cart remains available in this browser.</div>}
-          {products.filter(product => product.enabled).length === 0 && <Card><CardContent className="p-6 text-sm text-muted-foreground">{user ? 'No products are configured yet. Add them in Products.' : 'The product catalog loads after sign-in.'}</CardContent></Card>}
+          {products.filter(product => product.enabled).length === 0 && <Card><CardContent className="p-6 text-sm text-muted-foreground">No products are configured yet. Add them in Products.</CardContent></Card>}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {products.filter(product => product.enabled).map((product, index) => <button key={product.id} onClick={() => void addProduct(product)} className="group flex min-h-28 flex-col justify-between rounded-xl border bg-card p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <span className="font-semibold leading-snug">{product.display_name ?? product.name}</span><span className="mt-3 flex items-center justify-between"><span className="text-lg font-bold text-primary">{formatMoney(product.price_cents)}</span><kbd className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{['Q','W','E','A','S','D','Y','X','C','R','F','V'][index] ?? ''}</kbd></span>
@@ -315,7 +359,6 @@ export default function App() {
 
       {view === 'products' && <section className="mx-auto max-w-5xl space-y-5">
         <div><p className="text-sm font-medium text-primary">CONFIGURATION</p><h1 className="mt-1 text-2xl font-bold">Products</h1><p className="mt-1 text-muted-foreground">Catalog changes are stored centrally and apply after the next checkout reload.</p></div>
-        {!user && <p role="alert" className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">Sign in to manage products.</p>}
         <Card><CardHeader><CardTitle>{productDraft ? `Edit ${productDraft.name}` : 'Add product'}</CardTitle></CardHeader><CardContent><form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" onSubmit={saveProduct}>
           <label className="space-y-1 text-sm">Name<Input required value={productForm.name} onChange={event => setProductForm({ ...productForm, name: event.target.value })}/></label>
           <label className="space-y-1 text-sm">Display label (optional)<Input value={productForm.display_name} onChange={event => setProductForm({ ...productForm, display_name: event.target.value })}/></label>

@@ -16,13 +16,19 @@ export function createUserManager(config: RuntimeConfig) {
   });
 }
 
+export function isAuthenticated(user: User | null): user is User {
+  return user !== null && !user.expired && Boolean(user.access_token);
+}
+
 export async function callbackOrStoredUser(manager: UserManager): Promise<User | null> {
   if (location.search.includes('code=') && location.search.includes('state=')) {
     const callbackUser = await manager.signinCallback();
     history.replaceState({}, document.title, location.pathname);
-    return callbackUser ?? null;
+    const authenticatedUser = callbackUser ?? null;
+    return isAuthenticated(authenticatedUser) ? authenticatedUser : null;
   }
-  return manager.getUser();
+  const storedUser = await manager.getUser();
+  return isAuthenticated(storedUser) ? storedUser : null;
 }
 
 export async function tokenForUpload(manager: UserManager, current: User | null): Promise<string | null> {
