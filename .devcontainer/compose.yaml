@@ -29,7 +29,7 @@ services:
       POSTGRES_USER: sell_guy_dev
       POSTGRES_PASSWORD: sell_guy_dev
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - sell-guy-postgres:/var/lib/postgresql/data
     healthcheck:

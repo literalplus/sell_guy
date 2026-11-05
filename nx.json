@@ -5,6 +5,12 @@
     "default": ["{projectRoot}/**/*", "sharedGlobals"],
     "sharedGlobals": ["{workspaceRoot}/package.json", "{workspaceRoot}/pnpm-lock.yaml"]
   },
+  "plugins": [
+    {
+      "plugin": "@nx/vite/plugin",
+      "options": { "devTargetName": "serve" }
+    }
+  ],
   "targetDefaults": {
     "build": { "dependsOn": ["^build"], "cache": true },
     "test": { "cache": true },
