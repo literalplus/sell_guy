@@ -6,5 +6,5 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && corepack enable
 
-USER vscode
-RUN corepack prepare pnpm@9.15.5 --activate
+USER node
+RUN corepack prepare pnpm@12.16.1 --activate

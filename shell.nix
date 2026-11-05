@@ -23,6 +23,6 @@ pkgs.mkShell {
     export API_HOST="''${API_HOST:-0.0.0.0}"
     export API_PORT="''${API_PORT:-8080}"
     echo "Sell Guy toolchain ready (Podman, Node/Corepack, Rust, PostgreSQL, kubectl, Helm)."
-    echo "Use: corepack pnpm@9.15.5 install && corepack pnpm@9.15.5 dev"
+    echo "Use: corepack pnpm@12.16.1 install && corepack pnpm@12.16.1 dev"
   '';
 }

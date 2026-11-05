@@ -5,7 +5,8 @@
   "runServices": ["postgres", "workspace"],
   "workspaceFolder": "/workspaces/sell-guy",
   "shutdownAction": "stopCompose",
-  "remoteUser": "vscode",
+  "remoteUser": "node",
+  "updateRemoteUserUID": true,
   "forwardPorts": [4200, 8080],
   "portsAttributes": {
     "4200": { "label": "Sell Guy web" },
@@ -18,7 +19,7 @@
       "components": "rustfmt,clippy"
     }
   },
-  "postCreateCommand": "corepack pnpm@9.15.5 install --frozen-lockfile && corepack pnpm@9.15.5 db:migrate",
+  "postCreateCommand": "corepack pnpm@12.16.1 install --frozen-lockfile && corepack pnpm@12.16.1 db:migrate",
   "customizations": {
     "vscode": {
       "extensions": ["rust-lang.rust-analyzer", "dbaeumer.vscode-eslint"]

@@ -2,7 +2,7 @@
   "name": "sell-guy",
   "version": "1.0.0",
   "private": true,
-  "packageManager": "pnpm@9.15.5",
+  "packageManager": "pnpm@12.16.1",
   "scripts": {
     "dev": "nx run-many -t serve --projects=web,api --parallel",
     "build": "nx run-many -t build --projects=web,api",

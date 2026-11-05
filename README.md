@@ -17,6 +17,7 @@ React frontend and Rust API; the API serves the compiled frontend in production.
 1. Copy `.env.example` to `.env` and enter the Authentik issuer, client ID, and
    audience. The devcontainer starts a PostgreSQL 18 container with a local-only
    development role/database and applies migrations after creating the workspace.
+
 2. Open the repository in VS Code and choose **Reopen in Container**. The
    workspace exposes the Vite app at `http://localhost:4200` and API at
    `http://localhost:8080`; the PostgreSQL container is also published at
@@ -34,8 +35,10 @@ on the host.
 ### Local shell
 
 Enter the toolchain with `nix-shell`. It provides Node/Corepack, Rust, PostgreSQL
-tools, Podman/Podman Compose, and Kubernetes Helm. For a local development
-database (skip this when using the shared instance), start PostgreSQL with:
+tools, Podman/Podman Compose, and Kubernetes Helm. pnpm 12 uses a native
+executable; on NixOS without `nix-ld`, run pnpm commands from the devcontainer.
+For a local development database (skip this when using the shared instance),
+start PostgreSQL with:
 
 ```sh
 podman run --name sell-guy-postgres \
@@ -46,9 +49,9 @@ podman run --name sell-guy-postgres \
 Then run:
 
 ```sh
-corepack pnpm@9.15.5 install
-corepack pnpm@9.15.5 db:migrate
-corepack pnpm@9.15.5 dev
+corepack pnpm@12.16.1 install
+corepack pnpm@12.16.1 db:migrate
+corepack pnpm@12.16.1 dev
 ```
 
 ### Manual setup

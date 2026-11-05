@@ -3,6 +3,7 @@ services:
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
+    userns_mode: keep-id
     command: sleep infinity
     init: true
     env_file:
@@ -31,7 +32,7 @@ services:
     ports:
       - "127.0.0.1:5433:5432"
     volumes:
-      - sell-guy-postgres:/var/lib/postgresql/data
+      - sell-guy-postgres-v18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sell_guy_dev -d sell_guy"]
       interval: 3s
@@ -39,4 +40,4 @@ services:
       retries: 20
 
 volumes:
-  sell-guy-postgres:
+  sell-guy-postgres-v18:
