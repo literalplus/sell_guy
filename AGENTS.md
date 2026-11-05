@@ -5,7 +5,11 @@
 - Follow `rewrite_spec/` as the behavior source of truth. Keep money in integer
   cents, preserve IndexedDB transactionality, and keep invoice retries immutable
   and idempotent.
-- Run `pnpm test`, `pnpm lint`, and `pnpm build` for application changes. Run
+- Enter `nix-shell` before development and verification commands; it provides
+  most required tools, including Node/Corepack. Invoke pnpm as
+  `corepack pnpm@9.15.5 <command>` inside the shell.
+- Run `corepack pnpm@9.15.5 test`, `corepack pnpm@9.15.5 lint`, and
+  `corepack pnpm@9.15.5 build` for application changes. Run
   `helm lint deploy/helm/sell-guy` for chart changes.
 - PostgreSQL changes belong in tracked SQLx migrations. The app uses an existing
   PostgreSQL database; do not add a production database deployment to Helm.

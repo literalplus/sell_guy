@@ -23,8 +23,14 @@ pub struct AppState {
     pub pool: sqlx::PgPool,
     pub config: Arc<AppConfig>,
     pub http: reqwest::Client,
-    pub jwks: Arc<tokio::sync::RwLock<jsonwebtoken::jwk::JwkSet>>,
+    pub jwks: Arc<tokio::sync::RwLock<JwksCache>>,
     pub jwks_uri: Arc<String>,
+    pub jwks_refresh: Arc<tokio::sync::Mutex<Option<std::time::Instant>>>,
+}
+
+pub struct JwksCache {
+    pub keys: jsonwebtoken::jwk::JwkSet,
+    pub fetched_at: std::time::Instant,
 }
 
 #[tokio::main]
@@ -85,9 +91,14 @@ async fn main() -> anyhow::Result<()> {
         pool,
         config: Arc::new(config.clone()),
         http,
-        jwks: Arc::new(tokio::sync::RwLock::new(jwks)),
+        jwks: Arc::new(tokio::sync::RwLock::new(JwksCache {
+            keys: jwks,
+            fetched_at: std::time::Instant::now(),
+        })),
         jwks_uri: Arc::new(jwks_uri),
+        jwks_refresh: Arc::new(tokio::sync::Mutex::new(None)),
     };
+    auth::refresh_jwks_periodically(state.clone());
 
     let protected = Router::new()
         .route(
