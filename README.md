@@ -15,7 +15,7 @@ React frontend and Rust API; the API serves the compiled frontend in production.
 ### Devcontainer (PostgreSQL included)
 
 1. Copy `.env.example` to `.env` and enter the Authentik issuer, client ID, and
-   audience. The devcontainer starts a PostgreSQL 16 container with a local-only
+   audience. The devcontainer starts a PostgreSQL 18 container with a local-only
    development role/database and applies migrations after creating the workspace.
 2. Open the repository in VS Code and choose **Reopen in Container**. The
    workspace exposes the Vite app at `http://localhost:4200` and API at
