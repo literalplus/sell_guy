@@ -103,7 +103,7 @@ the chart values managed by ArgoCD. Database migrations run at application
 startup; SQLx tracks applied migrations and the catalog seed does not overwrite
 operator edits.
 
-Push the image using `podman push registry.lit.plus/sell-guy:latest`
+Push the image using `./push.sh` (arm multiarch).
 
 See [docs/configuration.md](docs/configuration.md) for runtime configuration,
 migration, and deployment details. See [CAVEATS.md](CAVEATS.md) for current
