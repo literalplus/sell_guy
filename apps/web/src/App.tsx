@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'oidc-client-ts';
-import { ArrowDownToLine, ArrowLeftRight, CircleDollarSign, Cloud, CloudOff, Minus, Plus, Settings, ShoppingBasket, Trash2, Undo2 } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeftRight, Banknote, CircleDollarSign, Cloud, Info, Minus, Plus, Settings, ShoppingBasket, Trash2, Undo2, X } from 'lucide-react';
 import { api, ApiError } from './api';
 import { accessTokenFor, callbackOrStoredUser, createUserManager, isAuthenticated, startOidcStateCleanup } from './auth';
 import { Button } from './components/ui/button';
@@ -14,6 +14,25 @@ import type { CartLine, PersistedState, Product, RuntimeConfig } from './types';
 type View = 'checkout' | 'products' | 'ledger';
 type DialogMode = 'custom' | 'donation' | 'manual-set' | 'manual-subtract' | null;
 type CartUndo = { before: PersistedState['active_cart']; after: PersistedState['active_cart'] };
+
+const euroCoins = [
+  { label: '1 c', cents: 1, ariaLabel: '1 cent coin', style: 'copper' },
+  { label: '2 c', cents: 2, ariaLabel: '2 cent coin', style: 'copper' },
+  { label: '5 c', cents: 5, ariaLabel: '5 cent coin', style: 'copper' },
+  { label: '10 c', cents: 10, ariaLabel: '10 cent coin', style: 'gold' },
+  { label: '20 c', cents: 20, ariaLabel: '20 cent coin', style: 'gold' },
+  { label: '50 c', cents: 50, ariaLabel: '50 cent coin', style: 'gold' },
+  { label: '€1', cents: 100, ariaLabel: '1 euro coin', style: 'bimetal' },
+  { label: '€2', cents: 200, ariaLabel: '2 euro coin', style: 'bimetal' },
+];
+const euroBanknotes = [
+  { label: '€5', cents: 500, ariaLabel: '5 euro banknote', style: 'five' },
+  { label: '€10', cents: 1000, ariaLabel: '10 euro banknote', style: 'ten' },
+  { label: '€20', cents: 2000, ariaLabel: '20 euro banknote', style: 'twenty' },
+  { label: '€50', cents: 5000, ariaLabel: '50 euro banknote', style: 'fifty' },
+  { label: '€100', cents: 10000, ariaLabel: '100 euro banknote', style: 'hundred' },
+  { label: '€200', cents: 20000, ariaLabel: '200 euro banknote', style: 'two-hundred' },
+];
 
 function newId() { return crypto.randomUUID(); }
 function sameCart(left: PersistedState['active_cart'], right: PersistedState['active_cart']) {
@@ -35,13 +54,18 @@ export default function App() {
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [dialogAmount, setDialogAmount] = useState('');
   const [dialogError, setDialogError] = useState('');
+  const [saleDetailsOpen, setSaleDetailsOpen] = useState(false);
   const [received, setReceived] = useState('');
+  const [cashDenominationsOpen, setCashDenominationsOpen] = useState(false);
+  const receivedInputRef = useRef<HTMLInputElement>(null);
   const [cartUndoStack, setCartUndoStack] = useState<CartUndo[]>([]);
   const [undoing, setUndoing] = useState(false);
   const undoingRef = useRef(false);
   const [status, setStatus] = useState('Bereit');
   const [loadingError, setLoadingError] = useState('');
   const [online, setOnline] = useState(navigator.onLine);
+  const [uploading, setUploading] = useState(false);
+  const uploadInProgress = useRef(false);
   const [productDraft, setProductDraft] = useState<Product | null>(null);
   const [productForm, setProductForm] = useState({ name: '', display_name: '', price: '', position: '14', enabled: true });
   const [productError, setProductError] = useState('');
@@ -49,6 +73,10 @@ export default function App() {
   const identityEmail = user?.profile.email ?? state?.email ?? null;
   const sums = useMemo(() => totals(state?.active_cart.lines ?? []), [state?.active_cart.lines]);
   const pendingCount = state?.pending.filter(item => item.status === 'queued').length ?? 0;
+  const addReceivedDenomination = (cents: number) => {
+    const total = (parseCurrencyToCents(received, true) ?? 0) + cents;
+    if (Number.isSafeInteger(total)) setReceived(`${Math.floor(total / 100)},${String(total % 100).padStart(2, '0')}`);
+  };
 
   useEffect(() => {
     loadState().then(setState).catch(error => setLoadingError(`Browser storage could not be opened: ${String(error)}`));
@@ -259,26 +287,45 @@ export default function App() {
   };
 
   const tryUpload = useCallback(async (current: PersistedState) => {
-    if (!manager || !online) return;
-    const token = await accessTokenFor(manager);
-    if (!token) return;
-    for (const pending of current.pending) {
-      if (pending.status === 'blocked') continue;
-      try {
-        const result = await api.submitInvoice(token, pending.snapshot);
-        current = await updateState(stateNow => ({ ...stateNow, pending: stateNow.pending.filter(item => item.snapshot.cart_uuid !== pending.snapshot.cart_uuid) }));
-        setState(current);
-        setStatus(`Invoice stored (${result.invoice_id})`);
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 409) {
-          current = await updateState(stateNow => ({ ...stateNow, pending: stateNow.pending.map(item => item.snapshot.cart_uuid === pending.snapshot.cart_uuid ? { ...item, status: 'blocked', message: error.message } : item) }));
+    if (uploadInProgress.current) return;
+    const queued = current.pending.filter(item => item.status === 'queued');
+    if (queued.length === 0) { setStatus('No queued invoices to upload'); return; }
+    if (!online) { setStatus('Cannot retry invoice uploads while offline'); return; }
+    if (!manager) { setStatus('Cannot retry invoice uploads: sign-in is unavailable'); return; }
+
+    uploadInProgress.current = true;
+    setUploading(true);
+    setStatus(`Uploading ${queued.length} queued invoice${queued.length === 1 ? '' : 's'}…`);
+    try {
+      const token = await accessTokenFor(manager);
+      if (!token) { setStatus('Cannot upload invoices: sign in again to refresh your session'); return; }
+      let uploaded = 0;
+      let blocked = 0;
+      for (const pending of queued) {
+        try {
+          const result = await api.submitInvoice(token, pending.snapshot);
+          current = await updateState(stateNow => ({ ...stateNow, pending: stateNow.pending.filter(item => item.snapshot.cart_uuid !== pending.snapshot.cart_uuid) }));
           setState(current);
-          setStatus(`Invoice blocked: ${error.message}`);
-        } else {
-          setStatus(`Invoice queued for retry: ${message(error)}`);
-          return;
+          uploaded += 1;
+          setStatus(`Invoice stored (${result.invoice_id})`);
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 409) {
+            current = await updateState(stateNow => ({ ...stateNow, pending: stateNow.pending.map(item => item.snapshot.cart_uuid === pending.snapshot.cart_uuid ? { ...item, status: 'blocked', message: error.message } : item) }));
+            setState(current);
+            blocked += 1;
+            setStatus(`Invoice blocked: ${error.message}`);
+          } else {
+            setStatus(`Invoice queued for retry: ${message(error)}`);
+            return;
+          }
         }
       }
+      setStatus(`Upload finished: ${uploaded} uploaded${blocked > 0 ? `, ${blocked} blocked` : ''}`);
+    } catch (error) {
+      setStatus(`Invoice upload could not start: ${message(error)}`);
+    } finally {
+      uploadInProgress.current = false;
+      setUploading(false);
     }
   }, [manager, online]);
 
@@ -290,6 +337,7 @@ export default function App() {
   }, [state, online, manager, tryUpload]);
 
   const saveSale = async () => {
+    setCashDenominationsOpen(false);
     if (!state || state.active_cart.lines.length === 0) return;
     try {
       await commit(current => queueActiveCart(current));
@@ -325,6 +373,16 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'F2' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !dialogMode && view === 'checkout') {
+        event.preventDefault();
+        setCashDenominationsOpen(true);
+        receivedInputRef.current?.focus();
+        return;
+      }
+      if (event.key === 'Escape' && cashDenominationsOpen) {
+        setCashDenominationsOpen(false);
+        return;
+      }
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable) || dialogMode || view !== 'checkout') return;
       if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'z') {
         if (cartUndoStack.length > 0) { event.preventDefault(); void undoLastCartEdit(); }
@@ -341,7 +399,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [products, addProduct, dialogMode, view, cartUndoStack.length, undoLastCartEdit]);
+  }, [products, addProduct, dialogMode, view, cartUndoStack.length, undoLastCartEdit, cashDenominationsOpen]);
 
   if (loadingError && (!state || !runtime || !manager || !authReady)) return <main className="mx-auto max-w-xl p-8"><Card><CardHeader><CardTitle>Sell Guy could not start</CardTitle></CardHeader><CardContent><p role="alert" className="text-destructive">{loadingError}</p><Button className="mt-5" onClick={() => location.reload()}>Try again</Button></CardContent></Card></main>;
   if (!state || !runtime || !manager || !authReady || !user) return <main className="grid min-h-screen place-items-center p-5"><div className="text-center"><div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-primary border-r-transparent"/><p className="text-muted-foreground">Starting Sell Guy…</p></div></main>;
@@ -362,7 +420,7 @@ export default function App() {
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
           <span className="hidden sm:inline">{identityEmail ?? 'Operator'}</span>
           <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${online ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}><span className={`h-1.5 w-1.5 rounded-full ${online ? 'bg-emerald-600' : 'bg-amber-600'}`}/>{online ? 'Online' : 'Offline'}</span>
-          {pendingCount > 0 && <span className="inline-flex items-center gap-1 text-xs"><Cloud size={15}/> {pendingCount} pending</span>}
+          {pendingCount > 0 && <button type="button" aria-label={uploading ? `Uploading ${pendingCount} pending invoices` : `Retry upload of ${pendingCount} pending invoices`} title={online ? 'Retry queued invoice uploads' : 'Retry invoice uploads (currently offline)'} aria-busy={uploading} disabled={uploading} onClick={() => void tryUpload(state)} className="inline-flex items-center gap-1 rounded-sm text-xs hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70"><Cloud size={15} className={uploading ? 'animate-pulse' : undefined}/> {pendingCount} pending{uploading && <span>· Uploading…</span>}</button>}
           <Button size="sm" variant="outline" onClick={() => { signingOut.current = true; void manager.signoutRedirect().catch(error => { signingOut.current = false; setStatus(`Sign-out could not be started: ${String(error)}`); }); }}>Sign out</Button>
         </div>
       </div>
@@ -371,18 +429,31 @@ export default function App() {
     <main className="mx-auto max-w-[1760px] p-4 lg:px-6 lg:py-5">
       {view === 'checkout' && <div className="grid items-start gap-4 lg:grid-cols-2">
         <section className="space-y-4">
-          <div className="flex items-end justify-between gap-3"><div><p className="text-sm font-medium text-primary">CHECKOUT</p><h1 className="mt-1 text-2xl font-bold">Select items</h1></div><div className="text-right text-sm text-muted-foreground">Sale ID<br/><span className="font-mono text-xs">{state.active_cart.cart_uuid.slice(0, 8)}</span></div></div>
           {products.filter(product => product.enabled).length === 0 && <Card><CardContent className="p-6 text-sm text-muted-foreground">No products are configured yet. Add them in Products.</CardContent></Card>}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3">
-            {products.filter(product => product.enabled).map((product, index) => <button key={product.id} onClick={() => void addProduct(product)} className="group flex min-h-28 touch-manipulation flex-col justify-between rounded-xl border bg-card p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md active:translate-y-0 active:scale-[0.98] active:border-primary/60 active:bg-primary/5 active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-4">
-              <span className="font-semibold leading-snug">{product.display_name ?? product.name}</span><span className="mt-3 flex items-center justify-between"><span className="text-lg font-bold text-primary">{formatMoney(product.price_cents)}</span><kbd className="keyboard-shortcut rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{['Q','W','E','A','S','D','Y','X','C','R','F','V'][index] ?? ''}</kbd></span>
-            </button>)}
-            <button onClick={() => openAmountDialog('custom')} className="group flex min-h-28 touch-manipulation flex-col justify-between rounded-xl border bg-muted/70 p-3 text-left text-muted-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-muted-foreground/30 hover:bg-muted hover:shadow-md active:translate-y-0 active:scale-[0.98] active:border-muted-foreground/50 active:bg-muted active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-4">
-              <span className="font-semibold leading-snug">Sonstiger Artikel</span><span className="flex items-center gap-2 text-sm font-medium"><Plus size={19}/>Betrag eingeben</span>
-            </button>
-            <button onClick={() => openAmountDialog('donation')} className="group flex min-h-28 touch-manipulation flex-col justify-between rounded-xl border bg-muted/70 p-3 text-left text-muted-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-muted-foreground/30 hover:bg-muted hover:shadow-md active:translate-y-0 active:scale-[0.98] active:border-muted-foreground/50 active:bg-muted active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-4">
-              <span className="font-semibold leading-snug">Spende</span><span className="flex items-center gap-2 text-sm font-medium"><CircleDollarSign size={19}/>Betrag eingeben</span>
-            </button>
+          <div className="relative">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3">
+              {products.filter(product => product.enabled).map((product, index) => <button key={product.id} onClick={() => void addProduct(product)} className="group flex min-h-28 touch-manipulation flex-col justify-between rounded-xl border bg-card p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md active:translate-y-0 active:scale-[0.98] active:border-primary/60 active:bg-primary/5 active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-4">
+                <span className="font-semibold leading-snug">{product.display_name ?? product.name}</span><span className="mt-3 flex items-center justify-between"><span className="text-lg font-bold text-primary">{formatMoney(product.price_cents)}</span><kbd className="keyboard-shortcut rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{['Q','W','E','A','S','D','Y','X','C','R','F','V'][index] ?? ''}</kbd></span>
+              </button>)}
+              <button onClick={() => openAmountDialog('custom')} className="group flex min-h-28 touch-manipulation flex-col justify-between rounded-xl border bg-muted/70 p-3 text-left text-muted-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-muted-foreground/30 hover:bg-muted hover:shadow-md active:translate-y-0 active:scale-[0.98] active:border-muted-foreground/50 active:bg-muted active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-4">
+                <span className="font-semibold leading-snug">Sonstiger Artikel</span><span className="flex items-center gap-2 text-sm font-medium"><Plus size={19}/>Betrag eingeben</span>
+              </button>
+              <button onClick={() => openAmountDialog('donation')} className="group flex min-h-28 touch-manipulation flex-col justify-between rounded-xl border bg-muted/70 p-3 text-left text-muted-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-muted-foreground/30 hover:bg-muted hover:shadow-md active:translate-y-0 active:scale-[0.98] active:border-muted-foreground/50 active:bg-muted active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-4">
+                <span className="font-semibold leading-snug">Spende</span><span className="flex items-center gap-2 text-sm font-medium"><CircleDollarSign size={19}/>Betrag eingeben</span>
+              </button>
+            </div>
+            {cashDenominationsOpen && <div className="absolute inset-x-0 top-0 z-10 min-h-[34rem] rounded-xl border border-primary/30 bg-background/95 p-3 shadow-xl backdrop-blur-sm sm:p-4" data-cash-denominations>
+              <div className="mx-auto flex h-full max-w-2xl flex-col rounded-lg bg-card/95 p-3 sm:p-4" role="dialog" aria-label="Quick cash input">
+                <div className="space-y-3 overflow-y-auto pb-1">
+                  <div><div className="grid grid-cols-4 gap-2">
+                    {euroCoins.map(coin => <button key={coin.label} type="button" aria-label={`Add ${coin.ariaLabel}`} onClick={() => addReceivedDenomination(coin.cents)} className="flex min-h-24 touch-manipulation flex-col items-center justify-center gap-1 rounded-lg border bg-muted/40 p-1 transition hover:bg-muted active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className={`cash-coin cash-coin-${coin.style}`}>{coin.label}</span></button>)}
+                  </div></div>
+                  <div><div className="grid grid-cols-3 gap-2">
+                    {euroBanknotes.map(note => <button key={note.label} type="button" aria-label={`Add ${note.ariaLabel}`} onClick={() => addReceivedDenomination(note.cents)} className="flex min-h-32 touch-manipulation items-center justify-center rounded-lg border bg-muted/40 px-1 py-3 transition hover:bg-muted active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className={`cash-note cash-note-${note.style}`}><span>{note.label}</span><span aria-hidden="true" className="cash-note-symbol">€</span></span></button>)}
+                  </div></div>
+                </div>
+              </div>
+            </div>}
           </div>
         </section>
 
@@ -401,13 +472,11 @@ export default function App() {
                 </ul>}
               </div>
               <div className="space-y-2 border-t bg-muted/30 p-4">
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Chargeable total</span><span className="font-medium tabular-nums">{formatMoney(sums.chargeable)}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Donations</span><span className="font-medium tabular-nums">{formatMoney(sums.donations)}</span></div>
-                <div className="flex justify-between border-t pt-2"><span className="font-semibold">Cash amount due</span><span className="text-xl font-bold tabular-nums">{formatMoney(sums.due)}</span></div>
-                <div className="grid grid-cols-[1fr_auto] items-center gap-3 pt-2"><label htmlFor="received" className="text-sm text-muted-foreground">Amount received</label><Input id="received" inputMode="decimal" placeholder="0,00" className="h-11 w-36 text-right tabular-nums" value={received} onChange={event => setReceived(event.target.value)}/></div>
+                <div className="flex items-center justify-between border-t pt-2"><div className="flex items-center gap-1"><span className="font-semibold">Cash amount due</span><Button type="button" aria-label="Show chargeable total and donations" title="Show chargeable total and donations" size="icon" variant="ghost" className="h-9 w-9 touch-manipulation text-muted-foreground" onClick={() => setSaleDetailsOpen(true)}><Info size={17}/></Button></div><span className="text-4xl font-bold tabular-nums">{formatMoney(sums.due)}</span></div>
+                <div className="grid gap-2 pt-2 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-3"><div className="flex min-w-0 items-center justify-start gap-2"><label htmlFor="received" className="text-sm text-muted-foreground">Amount received <kbd className="keyboard-shortcut ml-1 rounded bg-muted px-1.5 py-0.5 text-xs">F2</kbd></label><Button type="button" size="icon" variant={cashDenominationsOpen ? 'secondary' : 'outline'} aria-label={cashDenominationsOpen ? 'Close quick cash input' : 'Open quick cash input'} aria-pressed={cashDenominationsOpen} title={cashDenominationsOpen ? 'Close quick cash input' : 'Open quick cash input'} data-cash-toggle className="h-12 w-12 shrink-0 touch-manipulation" onClick={() => setCashDenominationsOpen(open => !open)}><Banknote size={20}/></Button></div><div className="relative w-full sm:w-36"><Input ref={receivedInputRef} id="received" inputMode="decimal" placeholder="0,00" aria-keyshortcuts="F2" className="h-11 w-full pl-10 text-right tabular-nums" value={received} onFocus={() => setCashDenominationsOpen(true)} onBlur={event => { if (!(event.relatedTarget instanceof HTMLElement && event.relatedTarget.closest('[data-cash-denominations], [data-cash-toggle]'))) setCashDenominationsOpen(false); }} onChange={event => setReceived(event.target.value)}/>{received !== '' && <button type="button" aria-label="Clear amount received" title="Clear amount received" onPointerDown={event => event.preventDefault()} onClick={() => { setReceived(''); receivedInputRef.current?.focus(); }} className="absolute left-1 top-1/2 grid h-8 w-8 -translate-y-1/2 touch-manipulation place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X size={15}/></button>}</div></div>
                 {received !== '' && <div aria-live="polite" className={`flex justify-between rounded-md p-2 text-sm font-semibold ${receivedCents === null || (change ?? 0) < 0 ? 'bg-destructive/10 text-destructive' : 'bg-emerald-100 text-emerald-900'}`}><span>{receivedCents === null ? 'Enter a valid amount' : change! < 0 ? 'Insufficient amount' : 'Change due'}</span><span>{receivedCents !== null && formatMoney(change!)}</span></div>}
                 <div className="grid grid-cols-2 gap-2 pt-2"><Button className="h-12 touch-manipulation" variant="outline" onClick={() => void discardCart()} disabled={state.active_cart.lines.length === 0}>Verwerfen</Button><Button className="h-12 touch-manipulation" onClick={() => void saveSale()} disabled={state.active_cart.lines.length === 0}><ArrowDownToLine size={17}/> Speichern</Button></div>
-                <p className="min-h-5 text-center text-xs text-muted-foreground" aria-live="polite">{status}</p>
+                <div className="flex min-h-5 items-center justify-between gap-3 text-xs text-muted-foreground"><p className="min-w-0" aria-live="polite">{status}</p><span className="shrink-0">Sale ID <span className="font-mono">{state.active_cart.cart_uuid.slice(0, 8)}</span></span></div>
               </div>
             </CardContent>
           </Card>
@@ -436,7 +505,7 @@ export default function App() {
         {state.pending.length > 0 && <Card><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>Invoice upload queue</CardTitle><Button size="sm" variant="outline" disabled={!online || !user} onClick={() => void tryUpload(state)}>Retry uploads</Button></div></CardHeader><CardContent><ul className="space-y-2">{state.pending.map(item => <li key={item.snapshot.cart_uuid} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm"><span><span className="font-mono">{item.snapshot.cart_uuid.slice(0, 8)}</span><span className="ml-3">{item.status === 'blocked' ? 'Blocked' : 'Waiting to upload'}</span>{item.message && <span className="ml-2 text-destructive">{item.message}</span>}</span><span>{formatMoney(item.snapshot.chargeable_total_cents)} chargeable</span></li>)}</ul></CardContent></Card>}
       </section>}
     </main>
-    <footer className="mx-auto flex max-w-[1760px] items-center justify-between px-4 pb-6 text-xs text-muted-foreground lg:px-6">{view !== 'checkout' && <span>{status}</span>}<span className="inline-flex items-center gap-1">{online ? <Cloud size={13}/> : <CloudOff size={13}/>} {online ? 'Connection available' : 'Working offline'}</span></footer>
+    {view !== 'checkout' && <footer className="mx-auto max-w-[1760px] px-4 pb-6 text-xs text-muted-foreground lg:px-6">{status}</footer>}
 
     <Dialog open={dialogMode !== null} onOpenChange={open => { if (!open) setDialogMode(null); }} title={dialogTitle}>
       <form onSubmit={submitAmount} className="space-y-4">
@@ -445,6 +514,12 @@ export default function App() {
         {dialogError && <p role="alert" className="text-sm text-destructive">{dialogError}</p>}
         <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setDialogMode(null)}>Cancel</Button><Button type="submit">Confirm</Button></div>
       </form>
+    </Dialog>
+    <Dialog open={saleDetailsOpen} onOpenChange={setSaleDetailsOpen} title="Sale total details">
+      <div className="space-y-3">
+        <div className="flex justify-between text-sm"><span className="text-muted-foreground">Chargeable total</span><span className="font-medium tabular-nums">{formatMoney(sums.chargeable)}</span></div>
+        <div className="flex justify-between text-sm"><span className="text-muted-foreground">Donations</span><span className="font-medium tabular-nums">{formatMoney(sums.donations)}</span></div>
+      </div>
     </Dialog>
   </div>;
 }
