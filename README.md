@@ -3,6 +3,10 @@
 A small, offline-tolerant point-of-sale application. The Nx workspace contains a
 React frontend and Rust API; the API serves the compiled frontend in production.
 
+![screenshot](ipad.png)
+
+![coin thing](received.png)
+
 ## Requirements
 
 - Node.js 20+ and pnpm 9+
@@ -91,13 +95,15 @@ cargo test --manifest-path apps/api/Cargo.toml
 
 ## Deployment
 
-Build the Alpine image with `podman build -t sell-guy:latest .`. The Helm chart
+Build the Alpine image with `podman build -t registry.lit.plus/sell-guy:latest .`. The Helm chart
 under `deploy/helm/sell-guy` deploys only the application and connects to an
 existing PostgreSQL database. Supply its dedicated database URL (preferably
 through a Kubernetes Secret), OIDC settings, image, ingress, and public URLs in
 the chart values managed by ArgoCD. Database migrations run at application
 startup; SQLx tracks applied migrations and the catalog seed does not overwrite
 operator edits.
+
+Push the image using `podman push registry.lit.plus/sell-guy:latest`
 
 See [docs/configuration.md](docs/configuration.md) for runtime configuration,
 migration, and deployment details. See [CAVEATS.md](CAVEATS.md) for current
