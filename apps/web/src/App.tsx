@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'oidc-client-ts';
 import { ArrowDownToLine, ArrowLeftRight, CircleDollarSign, Cloud, CloudOff, Minus, Plus, Settings, ShoppingBasket, Trash2 } from 'lucide-react';
 import { api, ApiError } from './api';
-import { callbackOrStoredUser, createUserManager, isAuthenticated, tokenForUpload } from './auth';
+import { accessTokenFor, callbackOrStoredUser, createUserManager, isAuthenticated, startOidcStateCleanup } from './auth';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Dialog } from './components/ui/dialog';
@@ -63,6 +63,7 @@ export default function App() {
     const auth = initialization.manager;
     setManager(auth);
     let active = true;
+    const stopOidcStateCleanup = startOidcStateCleanup(auth);
     const redirectToIdp = () => {
       if (!active || authRedirecting.current || signingOut.current) return;
       authRedirecting.current = true;
@@ -100,17 +101,22 @@ export default function App() {
     });
     return () => {
       active = false;
+      stopOidcStateCleanup();
       auth.events.removeUserLoaded(onUserLoaded);
       auth.events.removeUserUnloaded(onUserUnloaded);
     };
   }, [runtime]);
 
   useEffect(() => {
-    if (!user?.access_token) return;
-    api.products(user.access_token).then(result => { setProducts(result); setManagedProducts(result); }).catch(error => {
-      if (online) setStatus(`Catalog could not be loaded: ${message(error)}`);
+    if (!manager || !user?.access_token) return;
+    let active = true;
+    accessTokenFor(manager).then(token => {
+      if (active && token) return api.products(token).then(result => { setProducts(result); setManagedProducts(result); });
+    }).catch(error => {
+      if (active && online) setStatus(`Catalog could not be loaded: ${message(error)}`);
     });
-  }, [user?.access_token]);
+    return () => { active = false; };
+  }, [manager, user?.access_token, online]);
 
   useEffect(() => {
     if (!state || !user?.profile.email || state.email === user.profile.email) return;
@@ -210,7 +216,7 @@ export default function App() {
 
   const tryUpload = useCallback(async (current: PersistedState) => {
     if (!manager || !online) return;
-    const token = await tokenForUpload(manager, user);
+    const token = await accessTokenFor(manager);
     if (!token) return;
     for (const pending of current.pending) {
       if (pending.status === 'blocked') continue;
@@ -230,14 +236,14 @@ export default function App() {
         }
       }
     }
-  }, [manager, online, user]);
+  }, [manager, online]);
 
   useEffect(() => {
     if (!state?.pending.some(item => item.status === 'queued') || !online || !manager) return;
     void tryUpload(state);
     const retryTimer = window.setInterval(() => void tryUpload(state), 15_000);
     return () => window.clearInterval(retryTimer);
-  }, [state, online, manager, user, tryUpload]);
+  }, [state, online, manager, tryUpload]);
 
   const saveSale = async () => {
     if (!state || state.active_cart.lines.length === 0) return;
@@ -250,7 +256,7 @@ export default function App() {
 
   const saveProduct = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!user?.access_token) { setProductError('Sign in to edit products.'); return; }
+    if (!manager || !user) { setProductError('Sign in to edit products.'); return; }
     const cents = parseCurrencyToCents(productForm.price);
     const position = Number(productForm.position);
     if (!productForm.name.trim() || cents === null || !Number.isInteger(position) || position < 0) {
@@ -258,7 +264,9 @@ export default function App() {
     }
     const input = { name: productForm.name.trim(), display_name: productForm.display_name.trim() || null, price_cents: cents, position, enabled: productForm.enabled };
     try {
-      const product = productDraft ? await api.updateProduct(user.access_token, productDraft.id, input) : await api.createProduct(user.access_token, input);
+      const token = await accessTokenFor(manager);
+      if (!token) { setProductError('Your session expired. Sign in again to edit products.'); return; }
+      const product = productDraft ? await api.updateProduct(token, productDraft.id, input) : await api.createProduct(token, input);
       setManagedProducts(old => [...old.filter(item => item.id !== product.id), product].sort((a, b) => a.position - b.position || a.id - b.id));
       setProductDraft(null); setProductForm({ name: '', display_name: '', price: '', position: String(managedProducts.length + 1), enabled: true }); setProductError(''); setStatus('Product saved');
     } catch (error) { setProductError(message(error)); }
@@ -299,7 +307,7 @@ export default function App() {
         <a className="text-xl font-bold tracking-tight" href="#checkout" onClick={event => { event.preventDefault(); setView('checkout'); }}>Sell Guy<span className="text-primary">.</span></a>
         <nav aria-label="Main navigation" className="flex items-center gap-1">
           <Button variant={view === 'checkout' ? 'secondary' : 'ghost'} onClick={() => setView('checkout')}><ShoppingBasket size={17}/> Checkout</Button>
-          <Button variant={view === 'products' ? 'secondary' : 'ghost'} onClick={() => { setView('products'); if (user?.access_token) api.products(user.access_token).then(setManagedProducts).catch(error => setProductError(message(error))); }}><Settings size={17}/> Products</Button>
+          <Button variant={view === 'products' ? 'secondary' : 'ghost'} onClick={() => { setView('products'); if (manager) void accessTokenFor(manager).then(token => token ? api.products(token).then(setManagedProducts) : undefined).catch(error => setProductError(message(error))); }}><Settings size={17}/> Products</Button>
           <Button variant={view === 'ledger' ? 'secondary' : 'ghost'} onClick={() => setView('ledger')}><ArrowLeftRight size={17}/> Drawer</Button>
         </nav>
         <div className="flex items-center gap-3 text-sm text-muted-foreground">

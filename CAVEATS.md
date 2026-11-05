@@ -12,10 +12,11 @@ deploying, or extending the current rewrite. The product decisions in
 - Authentik is an external OIDC provider. Its issuer discovery endpoint must be
   reachable by the Rust API at startup, and the public client must allow
   authorization-code flow with PKCE and the exact deployed redirect URLs.
-- The configured audience must appear in the access token's `aud` claim. The
-  browser also sends the configured audience as an `audience` authorization
-  parameter; confirm that this matches the Authentik application/provider
-  configuration in the target environment.
+- The configured audience must appear in the access token's `aud` claim. It
+  defaults to the OIDC client ID, which matches Authentik's default. A custom
+  audience must be configured in the Authentik provider/token and set via
+  `OIDC_AUDIENCE`; the browser also sends it as an `audience` authorization
+  parameter.
 - One operator/browser profile is expected at a time. Product data is global;
   cash balance and its ledger belong to one browser's IndexedDB.
 - The production OCI image is built with Podman in this environment. The image

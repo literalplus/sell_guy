@@ -25,7 +25,10 @@ impl AppConfig {
     pub fn from_env() -> Result<Self> {
         let issuer = required("OIDC_ISSUER")?;
         let client_id = required("OIDC_CLIENT_ID")?;
-        let audience = required("OIDC_AUDIENCE")?;
+        // Authentik's default access-token audience is the OAuth client ID.
+        // Allow deployments to override it when their provider issues a
+        // dedicated API audience.
+        let audience = value("OIDC_AUDIENCE", &client_id);
         let app_base_url = value("APP_BASE_URL", "http://localhost:4200");
         let redirect_uri = value("OIDC_REDIRECT_URI", &app_base_url);
         let post_logout_redirect_uri = value("OIDC_POST_LOGOUT_REDIRECT_URI", &app_base_url);
@@ -41,7 +44,7 @@ impl AppConfig {
                 issuer,
                 client_id,
                 audience,
-                scope: value("OIDC_SCOPE", "openid profile email"),
+                scope: value("OIDC_SCOPE", "openid profile email offline_access"),
                 redirect_uri,
                 post_logout_redirect_uri,
             },

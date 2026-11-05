@@ -53,7 +53,7 @@ pub async fn authenticate(
             next.run(request).await
         }
         Err(error) => {
-            tracing::debug!(%error, "bearer token rejected");
+            tracing::warn!(%error, "bearer token rejected");
             ApiError::Unauthorized.into_response()
         }
     }
@@ -72,17 +72,6 @@ async fn validate_token(
         jsonwebtoken::errors::Error::from(jsonwebtoken::errors::ErrorKind::InvalidToken)
     })?;
     let mut validation = Validation::new(Algorithm::RS256);
-    validation.algorithms = vec![
-        Algorithm::RS256,
-        Algorithm::RS384,
-        Algorithm::RS512,
-        Algorithm::PS256,
-        Algorithm::PS384,
-        Algorithm::PS512,
-        Algorithm::ES256,
-        Algorithm::ES384,
-        Algorithm::EdDSA,
-    ];
     validation.set_issuer(&[state.config.oidc_issuer.as_str()]);
     validation.set_audience(&[state.config.oidc_audience.as_str()]);
     decode::<Claims>(token, &key, &validation)

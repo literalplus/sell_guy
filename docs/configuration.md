@@ -7,8 +7,8 @@
 | `DATABASE_URL` | Yes | Connection string for the app's dedicated PostgreSQL database/user on the shared PostgreSQL instance. |
 | `OIDC_ISSUER` | Yes | Authentik issuer URL; the API discovers OpenID configuration and signing keys from it. |
 | `OIDC_CLIENT_ID` | Yes | Public OIDC client used by the browser application. Configure authorization-code + PKCE and the redirect URI. |
-| `OIDC_AUDIENCE` | Yes | Expected access-token audience; also sent as the `audience` authorization parameter. |
-| `OIDC_SCOPE` | No | Defaults to `openid profile email`. |
+| `OIDC_AUDIENCE` | No | Expected access-token audience; defaults to `OIDC_CLIENT_ID` and is also sent as the `audience` authorization parameter. Set a different value only when the provider issues that value in the token's `aud` claim. |
+| `OIDC_SCOPE` | No | Defaults to `openid profile email offline_access`; the frontend requests `offline_access` for refresh-token support. |
 | `OIDC_REDIRECT_URI` | No | Browser OIDC callback; defaults to `APP_BASE_URL`. |
 | `OIDC_POST_LOGOUT_REDIRECT_URI` | No | Browser logout return URL; defaults to `APP_BASE_URL`. |
 | `APP_BASE_URL` | No | Public application URL, defaults to `http://localhost:4200`. |
@@ -24,6 +24,10 @@ For local development, set the values in `.env` (see `.env.example`). In
 Authentik, register the frontend redirect and post-logout URLs and enable PKCE.
 The frontend uses a public client; do not put a client secret in the browser or
 in the Helm chart.
+
+Configure the OIDC provider to allow `offline_access` and issue refresh tokens.
+The frontend reuses the access token until its expiry, then uses the refresh
+token grant; it does not perform proactive or iframe-based silent renewals.
 
 ## PostgreSQL and migrations
 
