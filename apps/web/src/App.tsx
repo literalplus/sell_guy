@@ -401,7 +401,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [products, addProduct, dialogMode, view, cartUndoStack.length, undoLastCartEdit, cashDenominationsOpen]);
 
-  if (loadingError && (!state || !runtime || !manager || !authReady)) return <main className="mx-auto max-w-xl p-8"><Card><CardHeader><CardTitle>Sell Guy could not start</CardTitle></CardHeader><CardContent><p role="alert" className="text-destructive">{loadingError}</p><Button className="mt-5" onClick={() => location.reload()}>Try again</Button></CardContent></Card></main>;
+  if (loadingError && (!state || !runtime || !manager || !authReady)) return <main className="mx-auto max-w-xl p-8"><Card><CardHeader><CardTitle>Sell Guy could not start</CardTitle></CardHeader><CardContent><p role="alert" className="text-destructive">{loadingError}</p><Button className="mt-5" onClick={() => location.assign('/')}>Try again</Button></CardContent></Card></main>;
   if (!state || !runtime || !manager || !authReady || !user) return <main className="grid min-h-screen place-items-center p-5"><div className="text-center"><div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-primary border-r-transparent"/><p className="text-muted-foreground">Starting Sell Guy…</p></div></main>;
 
   const dialogTitle = dialogMode === 'custom' ? 'Sonstiger Artikel' : dialogMode === 'donation' ? 'Spende' : dialogMode === 'manual-set' ? 'Kassenstand festlegen' : 'Betrag aus Kasse entnehmen';
