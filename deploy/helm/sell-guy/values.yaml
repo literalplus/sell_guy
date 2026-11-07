@@ -5,6 +5,9 @@ image:
   pullPolicy: IfNotPresent
   tag: "latest"
 
+# Reference pre-created registry credential Secret(s) in this namespace.
+# imagePullSecrets:
+#   - name: registry-credentials
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""

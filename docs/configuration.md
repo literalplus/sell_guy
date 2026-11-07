@@ -87,6 +87,17 @@ redirect URLs, and `app.baseUrl` in the values applied by ArgoCD. Keep credentia
 in a secret manager/Secret rather than plain values. Database migrations run
 when the application starts.
 
+For a private image registry, create a registry credential Secret in the same
+namespace as the release, then reference it in the chart values:
+
+```yaml
+imagePullSecrets:
+  - name: registry-credentials
+```
+
+Multiple pre-created pull secrets can be listed. The chart attaches them to the
+application pod; it does not create or manage the registry credentials.
+
 The development container is configured through `.devcontainer/devcontainer.json`
 and `.devcontainer/compose.yaml`; it includes PostgreSQL 16 and uses a separate
 development-only database role. In a Podman environment, the Dev Containers
