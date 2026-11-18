@@ -1,4 +1,4 @@
-FROM docker.io/library/node:22-alpine AS frontend-build
+FROM docker.io/library/node:26-alpine AS frontend-build
 WORKDIR /workspace
 RUN corepack enable && corepack prepare pnpm@12.16.1 --activate
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml nx.json tsconfig.base.json ./
