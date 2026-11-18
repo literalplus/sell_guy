@@ -11,7 +11,7 @@
     "db:migrate": "cargo run --locked --manifest-path apps/api/Cargo.toml -- migrate"
   },
   "devDependencies": {
-    "@nx/js": "24.0.4",
+    "@nx/js": "24.0.6",
     "@nx/react": "24.0.4",
     "@nx/vite": "24.0.4",
     "@testing-library/jest-dom": "7.0.1",
