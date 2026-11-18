@@ -15,7 +15,7 @@ COPY apps/api/src ./apps/api/src
 COPY apps/api/migrations ./apps/api/migrations
 RUN cargo build --release --locked --manifest-path apps/api/Cargo.toml
 
-FROM docker.io/library/alpine:3.21 AS runtime
+FROM docker.io/library/alpine:3.24 AS runtime
 RUN apk add --no-cache ca-certificates libgcc && addgroup -S app && adduser -S -G app app
 WORKDIR /app
 COPY --from=backend-build /workspace/apps/api/target/release/sell-guy-api /usr/local/bin/sell-guy-api
