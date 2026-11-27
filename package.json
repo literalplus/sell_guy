@@ -22,7 +22,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.2.1",
     "autoprefixer": "10.6.2",
-    "eslint": "10.14.0",
+    "eslint": "10.16.0",
     "fake-indexeddb": "6.2.7",
     "jsdom": "26.1.0",
     "nx": "24.0.4",
